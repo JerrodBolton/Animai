@@ -1,189 +1,277 @@
-import os  # Import os module for operating system interactions
-import time  # Import time module for delays and timing
-import random  # Import random module for random selections
-import webbrowser  # Import webbrowser module to open web pages
-from datetime import datetime  # Import datetime for date and time functions
+import os
+import time
+import random
+import webbrowser
+from datetime import datetime
+import threading
 
-import sounddevice as sd  # Import sounddevice for audio recording
-import speech_recognition as sr  # Import speech_recognition for speech-to-text
-from gtts import gTTS  # Import gTTS for text-to-speech conversion
-from playsound3 import playsound  # Import playsound3 to play audio files
+import sounddevice as sd
+import speech_recognition as sr
+from gtts import gTTS
+from playsound3 import playsound
 
-ASSISTANT_NAME = "Animai"  # Define the assistant's name
-VOICE_FILE = "voice.mp3"  # Define the filename for voice output
+ASSISTANT_NAME = "HeyShark"
+VOICE_FILE = "voice.mp3"
+THINKING_SOUND = "train_whistle.mov"
 
-WAKE_WORDS = ["Hey Shark"]  # List of wake words to activate the assistant
-WAKE_RESPONSES = [  # List of responses when wake word is detected
-    "I'm listening.",
-    "Yes?",
-    "How can I help?",
-    "Ready.",
+WAKE_WORDS = ["hey shark", "shark", "heyshark"]
+
+WAKE_RESPONSES = [
     "What can I do for you?",
-    
+    "Let's get to it.",
+    "Move along. I'm listening.",
+    "Stay sharp. Talk to me.",
+    "Let's move. What do you need?",
+]
+
+UNKNOWN_RESPONSES = [
+    "That wasn't clear. Stay focused and try again.",
+    "I need a stronger command than that.",
+    "Let's tighten that up and try again.",
+    "Move with purpose. Say that one more time.",
+    "You're losing momentum. Try again.",
+]
+
+MOTIVATION_LINES = [
+    "Keep it moving.",
+    "Stay locked in.",
+    "You have work to do.",
+    "Let's stay productive.",
+    "Discipline beats delay.",
+    "Momentum matters.",
+]
+
+TRAINING_MODE_LINES = [
+    "Training mode activated. Lock in.",
+    "Training mode on. No drifting.",
+    "You're in training mode now. Stay moving.",
+]
+
+PRODUCTIVITY_LINES = [
+    "Focus on the next task.",
+    "One step. Then the next.",
+    "Stay consistent.",
+    "Progress is built through motion.",
+]
+
+STARTUP_LINES = [
+    "HeyShark online. Stay sharp and get moving.",
+    "HeyShark ready. Let's get to work.",
+    "Systems ready. Stay focused.",
 ]
 
 
-def speak(text):  # Function to convert text to speech and play it
-    """Convert text to speech and play it."""  # Docstring for the function
-    try:  # Try block for error handling
-        print(f"{ASSISTANT_NAME}: {text}")  # Print the assistant's response to console
-        tts = gTTS(text=text, lang="en")  # Create a gTTS object with the text
-        tts.save(VOICE_FILE)  # Save the speech to a file
-        playsound(VOICE_FILE)  # Play the saved audio file
-        time.sleep(0.3)  # Short delay after speaking
-    except Exception as e:  # Catch any exceptions
-        print(f"Speech error: {e}")  # Print error message
+def speak(text):
+    """Convert text to speech and play it."""
+    try:
+        print(f"{ASSISTANT_NAME}: {text}")
+        tts = gTTS(text=text, lang="en")
+        tts.save(VOICE_FILE)
+        playsound(VOICE_FILE)
+        time.sleep(0.3)
+    except Exception as e:
+        print(f"Speech error: {e}")
 
 
-def listen(duration=3, fs=16000):  # Function to record audio and convert to text
-    """Record audio and convert speech to text."""  # Docstring
-    recognizer = sr.Recognizer()  # Create a recognizer instance
-    print("Listening...")  # Print listening message
+def play_thinking_sound():
+    """Play thinking sound in the background so it does not block speech."""
+    def play():
+        try:
+            playsound(THINKING_SOUND)
+        except Exception as e:
+            print(f"Thinking sound error: {e}")
 
-    try:  # Try block for recording and recognition
-        recording = sd.rec(  # Record audio using sounddevice
-            int(duration * fs),  # Number of samples
-            samplerate=fs,  # Sample rate
-            channels=1,  # Mono channel
-            dtype="int16"  # Data type
+    threading.Thread(target=play, daemon=True).start()
+
+
+def listen(duration=3, fs=16000):
+    """Record audio and convert speech to text."""
+    recognizer = sr.Recognizer()
+    print("Listening now... speak")
+
+    try:
+        recording = sd.rec(
+            int(duration * fs),
+            samplerate=fs,
+            channels=1,
+            dtype="int16"
         )
-        sd.wait()  # Wait for recording to finish
+        sd.wait()
 
-        print("Processing...")  # Print processing message
+        print("Processing...")
 
-        audio_data = recording.flatten().tobytes()  # Flatten and convert to bytes
-        audio = sr.AudioData(audio_data, fs, 2)  # Create AudioData object
+        audio_data = recording.flatten().tobytes()
+        audio = sr.AudioData(audio_data, fs, 2)
 
-        text = recognizer.recognize_google(audio)  # Recognize speech using Google
-        print(f"You said: {text}")  # Print recognized text
-        return text.lower().strip()  # Return lowercase, stripped text
+        text = recognizer.recognize_google(audio)
+        print(f"You said: {text}")
+        return text.lower().strip()
 
-    except Exception as e:  # Catch exceptions
-        print(f"Could not understand audio: {e}")  # Print error
-        return ""  # Return empty string on failure
-
-
-def is_wake_word(text):  # Function to check if wake word is in text
-    """Check if the wake word was spoken."""  # Docstring
-    return any(wake_word in text for wake_word in WAKE_WORDS)  # Check for any wake word
+    except Exception as e:
+        print(f"Could not understand audio: {e}")
+        return ""
 
 
-def tell_time():  # Function to get current time
-    return datetime.now().strftime("It is %I:%M %p.")  # Format and return time
+def is_wake_word(text):
+    """Check if the wake word was spoken."""
+    return any(wake_word in text for wake_word in WAKE_WORDS)
 
 
-def tell_date():  # Function to get current date
-    return datetime.now().strftime("Today is %A, %B %d, %Y.")  # Format and return date
+def tell_time():
+    return datetime.now().strftime("It is %I:%M %p.")
 
 
-def open_google():  # Function to open Google
-    webbrowser.open("https://www.google.com")  # Open Google in browser
-    return "Opening Google."  # Return response message
+def tell_date():
+    return datetime.now().strftime("Today is %A, %B %d, %Y.")
 
 
-def open_youtube():  # Function to open YouTube
-    webbrowser.open("https://www.youtube.com")  # Open YouTube in browser
-    return "Opening YouTube."  # Return response message
+def open_google():
+    webbrowser.open("https://www.google.com")
+    return "Opening Google. Stay on task."
 
 
-def open_chatgpt():  # Function to open ChatGPT
-    webbrowser.open("https://chatgpt.com")  # Open ChatGPT in browser
-    return "Opening ChatGPT."  # Return response message
+def open_youtube():
+    webbrowser.open("https://www.youtube.com")
+    return "Opening YouTube. Use it well."
 
 
-def open_vscode():  # Function to open VS Code
-    os.system("open -a 'Visual Studio Code'")  # Open VS Code using os command
-    return "Opening Visual Studio Code."  # Return response message
+def open_chatgpt():
+    webbrowser.open("https://chatgpt.com")
+    return "Opening ChatGPT. Let's work."
 
 
-def tell_joke():  # Function to tell a random joke
-    jokes = [  # List of jokes
-        "Why did the robot go to art school? Because it wanted to draw better circuits.",
-        "Why was the computer cold? Because it left its windows open.",
-        "Why did the AI assistant get promoted? Because it always had the right response."
+def open_vscode():
+    os.system("open -a 'Visual Studio Code'")
+    return "Opening Visual Studio Code. Time to build."
+
+
+def open_finder():
+    os.system("open .")
+    return "Opening Finder. Keep moving."
+
+
+def tell_joke():
+    jokes = [
+        "Why don't sharks like weak ideas? Because they smell hesitation.",
+        "Why did the shark become a coach? Because it never stops moving.",
+        "Why was the computer nervous around the shark? Too much byte.",
     ]
-    return random.choice(jokes)  # Return a random joke
+    return random.choice(jokes)
 
 
-def assistant_help():  # Function to provide help information
-    return (  # Return help text
-        "You can ask me to tell the time, tell the date, "
-        "open Google, open YouTube, open ChatGPT, open Visual Studio Code, "
-        "tell a joke, or say goodbye."
+def assistant_help():
+    return (
+        "You can ask me to tell the time, tell the date, open Google, "
+        "open YouTube, open ChatGPT, open Visual Studio Code, open Finder, "
+        "motivate you, start training mode, tell a joke, or say goodbye."
     )
 
 
-def handle_command(text):  # Function to handle user commands
-    """Handle user commands and return a spoken response."""  # Docstring
-    if not text:  # If no text provided
-        return "I didn't catch that."  # Return error message
-
-    if "hello" in text or "hi" in text:  # Check for greeting
-        return "Hello. I am ready."  # Return greeting response
-
-    elif "what is your name" in text or "who are you" in text:  # Check for name query
-        return f"I am {ASSISTANT_NAME}, your assistant."  # Return name response
-
-    elif "time" in text:  # Check for time request
-        return tell_time()  # Call tell_time function
-
-    elif "date" in text or "today" in text:  # Check for date request
-        return tell_date()  # Call tell_date function
-
-    elif "open google" in text:  # Check for open Google
-        return open_google()  # Call open_google function
-
-    elif "open youtube" in text:  # Check for open YouTube
-        return open_youtube()  # Call open_youtube function
-
-    elif "open chatgpt" in text:  # Check for open ChatGPT
-        return open_chatgpt()  # Call open_chatgpt function
-
-    elif "open vs code" in text or "open visual studio code" in text:  # Check for open VS Code
-        return open_vscode()  # Call open_vscode function
-
-    elif "joke" in text:  # Check for joke request
-        return tell_joke()  # Call tell_joke function
-
-    elif "help" in text or "what can you do" in text:  # Check for help request
-        return assistant_help()  # Call assistant_help function
-
-    elif "stage" in text or "version" in text:  # Check for version info
-        return "I am in phase two point one with wake word support."  # Return version response
-
-    elif "exit" in text or "mute" in text or "goodbye" in text:  # Check for exit commands
-        return "EXIT"  # Return exit signal
-
-    return "I heard you, but I do not know how to respond to that yet."  # Default response
+def motivational_push():
+    return random.choice(MOTIVATION_LINES)
 
 
-def run_assistant():  # Main function to run the assistant
-    """Main loop with wake word support."""  # Docstring
-    print(f"{ASSISTANT_NAME} is in sleep mode. Say 'Hey Animai' to wake me up.")  # Print initial message
-
-    while True:  # Infinite loop for continuous listening
-        text = listen(duration=2)  # Listen for wake word with short duration
-
-        if not text:  # If no text heard
-            continue  # Continue loop
-
-        if is_wake_word(text):  # If wake word detected
-            speak(random.choice(WAKE_RESPONSES))  # Speak a random wake response
-
-            command = listen(duration=4)  # Listen for command with longer duration
-
-            if not command:  # If no command heard
-                speak("I didn't hear a command.")  # Speak error message
-                continue  # Continue loop
-
-            result = handle_command(command)  # Handle the command
-
-            if result == "EXIT":  # If exit signal
-                speak("Goodbye.")  # Speak goodbye
-                break  # Break out of loop
-
-            speak(result)  # Speak the result
+def productivity_push():
+    return random.choice(PRODUCTIVITY_LINES)
 
 
-if __name__ == "__main__":  # If script is run directly
-    run_assistant()  # Call the main function
+def start_training_mode():
+    return random.choice(TRAINING_MODE_LINES)
+
+
+def handle_command(text):
+    """Handle user commands and return a spoken response."""
+    if not text:
+        return "I didn't catch that. Speak with purpose."
+
+    text = text.lower().strip()
+
+    greetings = ["hello", "hi", "hey"]
+    identity = ["what is your name", "who are you", "your name", "tell me your name"]
+    time_cmds = ["what time is it", "tell me the time", "current time", "time is it"]
+    date_cmds = ["what date is it", "what day", "today", "tell me the date", "current date"]
+    google_cmds = ["open google", "go to google"]
+    youtube_cmds = ["open youtube", "go to youtube"]
+    chatgpt_cmds = ["open chatgpt", "go to chatgpt"]
+    vscode_cmds = ["open vs code", "open visual studio code", "open code", "launch vs code"]
+    finder_cmds = ["open finder", "open my files"]
+    motivate_cmds = ["motivate me", "push me", "give me motivation", "say something motivating"]
+    training_cmds = ["training mode", "start training mode", "activate training mode"]
+    focus_cmds = ["focus mode", "start focus mode", "activate focus mode"]
+    status_cmds = ["status", "system status", "how are you", "report status"]
+    help_cmds = ["help", "what can you do", "show commands", "what do you do"]
+    joke_cmds = ["joke", "tell me a joke", "make me laugh"]
+    version_cmds = ["stage", "version", "what version", "what stage"]
+    exit_cmds = ["exit", "mute", "goodbye", "shut down", "stop"]
+
+    if any(cmd in text for cmd in greetings):
+        return "HeyShark is here. What can I do for you?"
+    if any(cmd in text for cmd in identity):
+        return "I am HeyShark. Built to keep you moving."
+    if any(cmd in text for cmd in time_cmds):
+        return f"{tell_time()} {motivational_push()}"
+    if any(cmd in text for cmd in date_cmds):
+        return f"{tell_date()} Stay on schedule."
+    if any(cmd in text for cmd in google_cmds):
+        return open_google()
+    if any(cmd in text for cmd in youtube_cmds):
+        return open_youtube()
+    if any(cmd in text for cmd in chatgpt_cmds):
+        return open_chatgpt()
+    if any(cmd in text for cmd in vscode_cmds):
+        return open_vscode()
+    if any(cmd in text for cmd in finder_cmds):
+        return open_finder()
+    if any(cmd in text for cmd in motivate_cmds):
+        return "Get up, lock in, and handle what is in front of you."
+    if any(cmd in text for cmd in training_cmds):
+        return start_training_mode()
+    if any(cmd in text for cmd in focus_cmds):
+        return "Focus mode engaged. Cut distractions and move."
+    if any(cmd in text for cmd in status_cmds):
+        return f"HeyShark is active. {productivity_push()}"
+    if any(cmd in text for cmd in help_cmds):
+        return assistant_help()
+    if any(cmd in text for cmd in joke_cmds):
+        return tell_joke()
+    if any(cmd in text for cmd in version_cmds):
+        return "I am HeyShark, phase two point three. Sharper and stronger."
+    if any(cmd in text for cmd in exit_cmds):
+        return "EXIT"
+
+    return random.choice(UNKNOWN_RESPONSES)
+
+
+def run_assistant():
+    """Main loop with wake word support."""
+    print(f"{ASSISTANT_NAME} is in sleep mode. Say 'Hey Shark' to wake me up.")
+    speak(random.choice(STARTUP_LINES))
+
+    while True:
+        text = listen(duration=2)
+
+        if not text:
+            continue
+
+        if is_wake_word(text):
+            speak(random.choice(WAKE_RESPONSES))
+            time.sleep(0.8)
+
+            command = listen(duration=5)
+
+            if not command:
+                speak("I didn't hear a command. Stay sharp and try again.")
+                continue
+
+            play_thinking_sound()
+            result = handle_command(command)
+
+            if result == "EXIT":
+                speak("Goodbye. Stay disciplined.")
+                break
+
+            speak(result)
+
+
+if __name__ == "__main__":
+    run_assistant()
