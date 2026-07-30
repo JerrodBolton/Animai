@@ -1,4 +1,4 @@
-audioop-lts==0.2.2
+audioop-lts==0.2.2; python_version >= "3.13"
 certifi==2026.2.25
 cffi==2.0.0
 charset-normalizer==3.4.7
