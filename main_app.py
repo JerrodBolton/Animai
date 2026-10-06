@@ -1,15 +1,20 @@
-"""Animai Kingdom - typed conversation prototype.
+"""Animai Kingdom - voice conversation prototype.
 
-Chat with an animal companion in the terminal. The character's personality
-comes from characters.py, and the replies come from Claude.
+Talk with an animal companion. The character's personality comes from
+characters.py, and the replies come from Claude.
 
-Run it with:  python main_app.py
+Run it with:  python main_app.py          (talk and listen)
+         or:  python main_app.py --text   (type and read)
 """
+
+import os
+import sys
 
 import anthropic
 from dotenv import load_dotenv
 
 from characters import SHARK
+from voice import listen, speak
 
 MODEL = "claude-opus-5-5"
 EXIT_WORDS = {"exit", "quit", "bye", "goodbye"}
@@ -70,17 +75,42 @@ class Companion:
         return text.strip()
 
 
+def say(character, text, use_voice):
+    """Print what the character says, and speak it out loud in voice mode."""
+    print(f"{character['name']}: {text}\n")
+    if use_voice:
+        speak(text)
+
+
+def get_user_text(use_voice):
+    """Get the user's next message by listening or by typing."""
+    if use_voice:
+        text = listen()
+        if text:
+            print(f"You: {text}")
+        return text
+    return input("You: ").strip()
+
+
 def main():
     load_dotenv()
-    companion = Companion(SHARK)
-    name = SHARK["name"]
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        print("No API key found. Create a .env file in this folder containing:")
+        print("ANTHROPIC_API_KEY=your-key-here")
+        return
 
-    print(f"{name}: {SHARK['greeting']}")
-    print("(Type 'exit' to quit.)\n")
+    use_voice = "--text" not in sys.argv
+    companion = Companion(SHARK)
+
+    if use_voice:
+        print("(Voice mode. Say 'goodbye' or press Ctrl+C to quit.)\n")
+    else:
+        print("(Text mode. Type 'exit' to quit.)\n")
+    say(SHARK, SHARK["greeting"], use_voice)
 
     while True:
         try:
-            user_text = input("You: ").strip()
+            user_text = get_user_text(use_voice)
         except (EOFError, KeyboardInterrupt):
             print()
             break
@@ -104,9 +134,9 @@ def main():
             companion.messages.pop()
             continue
 
-        print(f"{name}: {answer}\n")
+        say(SHARK, answer, use_voice)
 
-    print(f"{name}: {SHARK['farewell']}")
+    say(SHARK, SHARK["farewell"], use_voice)
 
 
 if __name__ == "__main__":

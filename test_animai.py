@@ -1,5 +1,9 @@
+import os
 from types import SimpleNamespace
 
+import numpy as np
+
+import voice
 from characters import SHARK
 from main_app import Companion, build_system_prompt, is_exit_command
 
@@ -54,3 +58,41 @@ def test_reply_remembers_conversation():
 def test_refusal_gets_in_character_reply():
     companion = Companion(SHARK, client=FakeClient("", stop_reason="refusal"))
     assert "not something I can help with" in companion.reply("something off limits")
+
+
+def test_audio_level_is_louder_for_louder_sound():
+    quiet = np.full(1600, 10, dtype=np.int16)
+    loud = np.full(1600, 2000, dtype=np.int16)
+    assert voice.audio_level(loud) > voice.audio_level(quiet)
+    assert voice.audio_level(np.zeros(1600, dtype=np.int16)) == 0
+
+
+def test_listen_returns_empty_when_speech_not_understood(monkeypatch):
+    class FakeRecognizer:
+        def recognize_google(self, audio):
+            raise voice.sr.UnknownValueError()
+
+    monkeypatch.setattr(voice, "record_until_silence", lambda: b"\x00\x00" * 1600)
+    monkeypatch.setattr(voice.sr, "Recognizer", FakeRecognizer)
+    assert voice.listen() == ""
+
+
+def test_speak_cleans_up_audio_file_even_on_error(monkeypatch):
+    saved_files = []
+
+    class FakeTTS:
+        def __init__(self, text, lang):
+            pass
+
+        def save(self, path):
+            saved_files.append(path)
+
+    def broken_player(path):
+        raise RuntimeError("no speaker")
+
+    monkeypatch.setattr(voice, "gTTS", FakeTTS)
+    monkeypatch.setattr(voice, "playsound", broken_player)
+    voice.speak("Stay sharp.")
+
+    assert len(saved_files) == 1
+    assert not os.path.exists(saved_files[0])
