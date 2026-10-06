@@ -1,277 +1,113 @@
-import os
-import time
-import random
-import webbrowser
-from datetime import datetime
-import threading
+"""Animai Kingdom - typed conversation prototype.
 
-import sounddevice as sd
-import speech_recognition as sr
-from gtts import gTTS
-from playsound3 import playsound
+Chat with an animal companion in the terminal. The character's personality
+comes from characters.py, and the replies come from Claude.
 
-ASSISTANT_NAME = "HeyShark"
-VOICE_FILE = "voice.mp3"
-THINKING_SOUND = "train_whistle.mov"
+Run it with:  python main_app.py
+"""
 
-WAKE_WORDS = ["hey shark", "shark", "heyshark"]
+import anthropic
+from dotenv import load_dotenv
 
-WAKE_RESPONSES = [
-    "What can I do for you?",
-    "Let's get to it.",
-    "Move along. I'm listening.",
-    "Stay sharp. Talk to me.",
-    "Let's move. What do you need?",
-]
+from characters import SHARK
 
-UNKNOWN_RESPONSES = [
-    "That wasn't clear. Stay focused and try again.",
-    "I need a stronger command than that.",
-    "Let's tighten that up and try again.",
-    "Move with purpose. Say that one more time.",
-    "You're losing momentum. Try again.",
-]
-
-MOTIVATION_LINES = [
-    "Keep it moving.",
-    "Stay locked in.",
-    "You have work to do.",
-    "Let's stay productive.",
-    "Discipline beats delay.",
-    "Momentum matters.",
-]
-
-TRAINING_MODE_LINES = [
-    "Training mode activated. Lock in.",
-    "Training mode on. No drifting.",
-    "You're in training mode now. Stay moving.",
-]
-
-PRODUCTIVITY_LINES = [
-    "Focus on the next task.",
-    "One step. Then the next.",
-    "Stay consistent.",
-    "Progress is built through motion.",
-]
-
-STARTUP_LINES = [
-    "HeyShark online. Stay sharp and get moving.",
-    "HeyShark ready. Let's get to work.",
-    "Systems ready. Stay focused.",
-]
+MODEL = "claude-opus-5-5"
+EXIT_WORDS = {"exit", "quit", "bye", "goodbye"}
 
 
-def speak(text):
-    """Convert text to speech and play it."""
-    try:
-        print(f"{ASSISTANT_NAME}: {text}")
-        tts = gTTS(text=text, lang="en")
-        tts.save(VOICE_FILE)
-        playsound(VOICE_FILE)
-        time.sleep(0.3)
-    except Exception as e:
-        print(f"Speech error: {e}")
-
-
-def play_thinking_sound():
-    """Play thinking sound in the background so it does not block speech."""
-    def play():
-        try:
-            playsound(THINKING_SOUND)
-        except Exception as e:
-            print(f"Thinking sound error: {e}")
-
-    threading.Thread(target=play, daemon=True).start()
-
-
-def listen(duration=3, fs=16000):
-    """Record audio and convert speech to text."""
-    recognizer = sr.Recognizer()
-    print("Listening now... speak")
-
-    try:
-        recording = sd.rec(
-            int(duration * fs),
-            samplerate=fs,
-            channels=1,
-            dtype="int16"
-        )
-        sd.wait()
-
-        print("Processing...")
-
-        audio_data = recording.flatten().tobytes()
-        audio = sr.AudioData(audio_data, fs, 2)
-
-        text = recognizer.recognize_google(audio)
-        print(f"You said: {text}")
-        return text.lower().strip()
-
-    except Exception as e:
-        print(f"Could not understand audio: {e}")
-        return ""
-
-
-def is_wake_word(text):
-    """Check if the wake word was spoken."""
-    return any(wake_word in text for wake_word in WAKE_WORDS)
-
-
-def tell_time():
-    return datetime.now().strftime("It is %I:%M %p.")
-
-
-def tell_date():
-    return datetime.now().strftime("Today is %A, %B %d, %Y.")
-
-
-def open_google():
-    webbrowser.open("https://www.google.com")
-    return "Opening Google. Stay on task."
-
-
-def open_youtube():
-    webbrowser.open("https://www.youtube.com")
-    return "Opening YouTube. Use it well."
-
-
-def open_chatgpt():
-    webbrowser.open("https://chatgpt.com")
-    return "Opening ChatGPT. Let's work."
-
-
-def open_vscode():
-    os.system("open -a 'Visual Studio Code'")
-    return "Opening Visual Studio Code. Time to build."
-
-
-def open_finder():
-    os.system("open .")
-    return "Opening Finder. Keep moving."
-
-
-def tell_joke():
-    jokes = [
-        "Why don't sharks like weak ideas? Because they smell hesitation.",
-        "Why did the shark become a coach? Because it never stops moving.",
-        "Why was the computer nervous around the shark? Too much byte.",
-    ]
-    return random.choice(jokes)
-
-
-def assistant_help():
+def build_system_prompt(character):
+    """Turn a character dictionary into instructions for the AI model."""
     return (
-        "You can ask me to tell the time, tell the date, open Google, "
-        "open YouTube, open ChatGPT, open Visual Studio Code, open Finder, "
-        "motivate you, start training mode, tell a joke, or say goodbye."
+        f"You are {character['name']}, a {character['animal']} who lives in "
+        f"Animai Kingdom and works as a desk companion for the user.\n\n"
+        f"Personality: {character['personality']}\n\n"
+        f"Backstory: {character['backstory']}\n\n"
+        f"Speaking style: {character['speaking_style']}\n\n"
+        f"You help with: {character['helps_with']}\n\n"
+        "Stay in character at all times. Your replies will be spoken aloud, "
+        "so keep them to two or three short sentences and use plain words "
+        "only: no lists, no markdown, no emoji. Latency-sensitive; begin your "
+        "answer immediately."
     )
 
 
-def motivational_push():
-    return random.choice(MOTIVATION_LINES)
+def is_exit_command(text):
+    """Check if the user wants to end the conversation."""
+    return text.strip().lower().strip(".!") in EXIT_WORDS
 
 
-def productivity_push():
-    return random.choice(PRODUCTIVITY_LINES)
+class Companion:
+    """An animal companion that remembers the conversation."""
+
+    def __init__(self, character, client=None):
+        self.character = character
+        self.system_prompt = build_system_prompt(character)
+        self.client = client or anthropic.Anthropic()
+        self.messages = []
+
+    def reply(self, user_text):
+        """Send what the user said to the AI model and return the reply."""
+        self.messages.append({"role": "user", "content": user_text})
+
+        response = self.client.beta.messages.create(
+            model=MODEL,
+            max_tokens=2000,
+            system=self.system_prompt,
+            messages=self.messages,
+            output_config={"effort": "low"},
+            # If the model declines a request, retry it on a fallback model.
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+
+        # Keep the full response (not just the text) so the history stays valid.
+        self.messages.append({"role": "assistant", "content": response.content})
+
+        if response.stop_reason == "refusal":
+            return "That's not something I can help with. Pick another target."
+
+        text = "".join(block.text for block in response.content if block.type == "text")
+        return text.strip()
 
 
-def start_training_mode():
-    return random.choice(TRAINING_MODE_LINES)
+def main():
+    load_dotenv()
+    companion = Companion(SHARK)
+    name = SHARK["name"]
 
-
-def handle_command(text):
-    """Handle user commands and return a spoken response."""
-    if not text:
-        return "I didn't catch that. Speak with purpose."
-
-    text = text.lower().strip()
-
-    greetings = ["hello", "hi", "hey"]
-    identity = ["what is your name", "who are you", "your name", "tell me your name"]
-    time_cmds = ["what time is it", "tell me the time", "current time", "time is it"]
-    date_cmds = ["what date is it", "what day", "today", "tell me the date", "current date"]
-    google_cmds = ["open google", "go to google"]
-    youtube_cmds = ["open youtube", "go to youtube"]
-    chatgpt_cmds = ["open chatgpt", "go to chatgpt"]
-    vscode_cmds = ["open vs code", "open visual studio code", "open code", "launch vs code"]
-    finder_cmds = ["open finder", "open my files"]
-    motivate_cmds = ["motivate me", "push me", "give me motivation", "say something motivating"]
-    training_cmds = ["training mode", "start training mode", "activate training mode"]
-    focus_cmds = ["focus mode", "start focus mode", "activate focus mode"]
-    status_cmds = ["status", "system status", "how are you", "report status"]
-    help_cmds = ["help", "what can you do", "show commands", "what do you do"]
-    joke_cmds = ["joke", "tell me a joke", "make me laugh"]
-    version_cmds = ["stage", "version", "what version", "what stage"]
-    exit_cmds = ["exit", "mute", "goodbye", "shut down", "stop"]
-
-    if any(cmd in text for cmd in greetings):
-        return "HeyShark is here. What can I do for you?"
-    if any(cmd in text for cmd in identity):
-        return "I am HeyShark. Built to keep you moving."
-    if any(cmd in text for cmd in time_cmds):
-        return f"{tell_time()} {motivational_push()}"
-    if any(cmd in text for cmd in date_cmds):
-        return f"{tell_date()} Stay on schedule."
-    if any(cmd in text for cmd in google_cmds):
-        return open_google()
-    if any(cmd in text for cmd in youtube_cmds):
-        return open_youtube()
-    if any(cmd in text for cmd in chatgpt_cmds):
-        return open_chatgpt()
-    if any(cmd in text for cmd in vscode_cmds):
-        return open_vscode()
-    if any(cmd in text for cmd in finder_cmds):
-        return open_finder()
-    if any(cmd in text for cmd in motivate_cmds):
-        return "Get up, lock in, and handle what is in front of you."
-    if any(cmd in text for cmd in training_cmds):
-        return start_training_mode()
-    if any(cmd in text for cmd in focus_cmds):
-        return "Focus mode engaged. Cut distractions and move."
-    if any(cmd in text for cmd in status_cmds):
-        return f"HeyShark is active. {productivity_push()}"
-    if any(cmd in text for cmd in help_cmds):
-        return assistant_help()
-    if any(cmd in text for cmd in joke_cmds):
-        return tell_joke()
-    if any(cmd in text for cmd in version_cmds):
-        return "I am HeyShark, phase two point three. Sharper and stronger."
-    if any(cmd in text for cmd in exit_cmds):
-        return "EXIT"
-
-    return random.choice(UNKNOWN_RESPONSES)
-
-
-def run_assistant():
-    """Main loop with wake word support."""
-    print(f"{ASSISTANT_NAME} is in sleep mode. Say 'Hey Shark' to wake me up.")
-    speak(random.choice(STARTUP_LINES))
+    print(f"{name}: {SHARK['greeting']}")
+    print("(Type 'exit' to quit.)\n")
 
     while True:
-        text = listen(duration=2)
+        try:
+            user_text = input("You: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
 
-        if not text:
+        if not user_text:
+            continue
+        if is_exit_command(user_text):
+            break
+
+        try:
+            answer = companion.reply(user_text)
+        except anthropic.AuthenticationError:
+            print("Error: no valid API key. Add ANTHROPIC_API_KEY to your .env file.")
+            break
+        except anthropic.APIConnectionError:
+            print("Error: can't reach the AI service. Check your internet connection.")
+            companion.messages.pop()
+            continue
+        except anthropic.APIStatusError as e:
+            print(f"Error from the AI service ({e.status_code}): {e.message}")
+            companion.messages.pop()
             continue
 
-        if is_wake_word(text):
-            speak(random.choice(WAKE_RESPONSES))
-            time.sleep(0.8)
+        print(f"{name}: {answer}\n")
 
-            command = listen(duration=5)
-
-            if not command:
-                speak("I didn't hear a command. Stay sharp and try again.")
-                continue
-
-            play_thinking_sound()
-            result = handle_command(command)
-
-            if result == "EXIT":
-                speak("Goodbye. Stay disciplined.")
-                break
-
-            speak(result)
+    print(f"{name}: {SHARK['farewell']}")
 
 
 if __name__ == "__main__":
-    run_assistant()
+    main()
